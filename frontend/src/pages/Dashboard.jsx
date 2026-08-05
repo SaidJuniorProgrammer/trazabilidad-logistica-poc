@@ -104,11 +104,11 @@ const Dashboard = () => {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <h2 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-2">Registrar Sensor</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              {/* <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">ID del Lote</label>
                 <input type="number" name="loteId" value={formData.loteId} onChange={handleChange} required 
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div>
+              </div> */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Temp. Contenedor (°C)</label>
                 <input type="number" step="0.1" name="temperatura" value={formData.temperatura} onChange={handleChange} required 
