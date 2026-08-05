@@ -13,11 +13,11 @@ app.use(cors());
 
 
 const pool = new Pool({
-  user: 'admin',
-  host: 'db',
-  database: 'camaron_db',
-  password: 'admin123',
-  port: 5432,
+  user: process.env.DB_USER || 'admin',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'camaron_db',
+  password: process.env.DB_PASSWORD || 'admin123',
+  port: process.env.DB_PORT || 5432,
 });
 
 pool.on('error', (err, client) => {
