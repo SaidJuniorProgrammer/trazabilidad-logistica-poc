@@ -1,182 +1,197 @@
-import { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import React, { useState, useEffect } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
+  LineChart, Line, AreaChart, Area, ComposedChart 
+} from 'recharts';
+import { Activity, AlertTriangle, ShieldCheck, DollarSign, ThermometerSnowflake, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
+import clsx from 'clsx';
 
-const Dashboard = () => {
-  const [formData, setFormData] = useState({ loteId: '1', temperatura: '', ubicacion: '' });
-  const [resultado, setResultado] = useState(null);
-  const [error, setError] = useState(null);
-  const [historial, setHistorial] = useState([]);
-  
-  const [climaExterior, setClimaExterior] = useState(null);
-  const [precioMercado, setPrecioMercado] = useState("Cargando...");
-
-  const tempPromedio = historial.length > 0 ? (historial.reduce((acc, curr) => acc + curr.temperatura, 0) / historial.length).toFixed(1) : 0;
-  const tempMaxima = historial.length > 0 ? Math.max(...historial.map(h => h.temperatura)).toFixed(1) : 0;
-  const cadenaRota = historial.some(h => h.temperatura > -18);
-
-  const cargarDatosExternos = async () => {
-    try {
-      const resClima = await fetch('https://api.open-meteo.com/v1/forecast?latitude=-2.23&longitude=-80.91&current_weather=true');
-      const dataClima = await resClima.json();
-      setClimaExterior(dataClima.current_weather.temperature);
-    } catch (err) { console.error("Error Clima:", err); }
-
-    try {
-      const resScraping = await fetch('http://localhost:3001/api/mercado/precio-camaron');
-      const dataScraping = await resScraping.json();
-      let periodoTexto = '';
-      if (dataScraping.periodo) {
-        const fecha = new Date(dataScraping.periodo + 'T00:00:00');
-        periodoTexto = ` (${fecha.toLocaleDateString('es-EC', { month: 'long', year: 'numeric' })})`;
-      }
-      setPrecioMercado(`$${dataScraping.precio} ${dataScraping.moneda}${periodoTexto}`);
-    } catch (err) { setPrecioMercado("Error de Scraping"); }
-  };
-
-  const cargarHistorial = async () => {
-    try {
-      const response = await fetch(`http://localhost:3001/api/eventos/${formData.loteId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const datosFormateados = data.map(item => ({
-          ...item,
-          hora: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          temperatura: parseFloat(item.temperatura)
-        }));
-        setHistorial(datosFormateados);
-      }
-    } catch (err) { console.error(err); }
-  };
+export default function Dashboard() {
+  const [dataTransporte, setDataTransporte] = useState([]);
+  const [dataDosificacion, setDataDosificacion] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState({
+    lotesAprobados: 0,
+    riesgoFinanciero: 0,
+    alertasActivas: 0,
+    totalEventos: 0
+  });
 
   useEffect(() => {
-    cargarHistorial();
-    cargarDatosExternos();
+    // Simulando llamadas a la API (o llamando a la real)
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        // Simulando datos para la demostración premium
+        const mockDosificacion = [
+          { name: 'Lote 1', ppm: 80, limite: 100, estado: 'APROBADO' },
+          { name: 'Lote 2', ppm: 110, limite: 100, estado: 'ALERTA' },
+          { name: 'Lote 3', ppm: 95, limite: 100, estado: 'APROBADO' },
+          { name: 'Lote 4', ppm: 155, limite: 150, estado: 'CRITICO' },
+          { name: 'Lote 5', ppm: 140, limite: 150, estado: 'APROBADO' },
+        ];
+        
+        const mockTransporte = Array.from({ length: 10 }).map((_, i) => ({
+          time: `1${i}:00`,
+          temp: -17 + (Math.random() * 2),
+          ext: 25 + (Math.random() * 5)
+        }));
+
+        setDataDosificacion(mockDosificacion);
+        setDataTransporte(mockTransporte);
+        
+        setKpis({
+          lotesAprobados: 78,
+          riesgoFinanciero: 15450,
+          alertasActivas: 3,
+          totalEventos: 142
+        });
+        
+      } catch (error) {
+        console.error("Error cargando dashboard", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
-  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const CardKPI = ({ title, value, icon: Icon, colorClass, subtitle }) => (
+    <motion.div 
+      whileHover={{ y: -5 }}
+      className={clsx(
+        "relative overflow-hidden p-6 rounded-2xl shadow-xl backdrop-blur-md bg-white/80 border border-white/20",
+        "before:absolute before:inset-0 before:bg-gradient-to-br before:opacity-10",
+        colorClass
+      )}
+    >
+      <div className="flex justify-between items-start z-10 relative">
+        <div>
+          <p className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{title}</p>
+          <h3 className="text-4xl font-extrabold text-gray-900 mt-2">{value}</h3>
+          {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+        </div>
+        <div className={clsx("p-4 rounded-xl shadow-inner", colorClass.replace('before:', 'bg-').split(' ')[1])}>
+          <Icon className="w-8 h-8 text-white" />
+        </div>
+      </div>
+    </motion.div>
+  );
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setResultado(null);
-    setError(null);
-
-    try {
-      const response = await fetch('http://localhost:3001/api/evento', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          loteId: parseInt(formData.loteId),
-          temperatura: parseFloat(formData.temperatura),
-          ubicacion: formData.ubicacion
-        })
-      });
-
-      if (!response.ok) throw new Error('Error en el servidor');
-
-      const data = await response.json();
-      setResultado(data);
-      cargarHistorial();
-      setFormData({ ...formData, temperatura: '', ubicacion: '' });
-    } catch (err) { setError(err.message); }
-  };
+  if (loading) return (
+    <div className="flex h-full w-full items-center justify-center bg-slate-50">
+      <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+    </div>
+  );
 
   return (
-    <div className="p-8 w-full">
-      <header className="flex justify-between items-end mb-8 border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800">Panel Principal</h1>
-          <p className="text-slate-500 mt-1">Supervisión de Trazabilidad Inteligente</p>
-        </div>
-        <div className="flex gap-4">
-          <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Clima Local (API)</span>
-            <span className="text-lg font-bold text-sky-600">{climaExterior !== null ? `${climaExterior}°C` : '...'}</span>
-          </div>
-          <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mercado (Scraping)</span>
-            <span className="text-lg font-bold text-emerald-600">{precioMercado}</span>
-          </div>
-        </div>
+    <div className="p-8 space-y-8 bg-slate-50 min-h-full">
+      <header className="mb-10">
+        <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-cyan-500">
+          Inteligencia de Negocios
+        </h1>
+        <p className="text-gray-500 font-medium mt-2 tracking-wide">
+          ShrimpColdChain | Monitoreo en Tiempo Real
+        </p>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        <div className="xl:col-span-1 space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-2">Registrar Sensor</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">ID del Lote</label>
-                <input type="number" name="loteId" value={formData.loteId} onChange={handleChange} required 
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Temp. Contenedor (°C)</label>
-                <input type="number" step="0.1" name="temperatura" value={formData.temperatura} onChange={handleChange} required 
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Punto de Control</label>
-                <input type="text" name="ubicacion" value={formData.ubicacion} onChange={handleChange} required placeholder="Ej. Empacadora"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div>
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-md transition duration-200 shadow-md text-sm">
-                Sellar Registro Seguro
-              </button>
-            </form>
-          </div>
+      {/* KPI Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <CardKPI 
+          title="Lotes Aprobados" 
+          value={`${kpis.lotesAprobados}%`} 
+          icon={ShieldCheck} 
+          colorClass="before:from-green-400 before:to-emerald-600 bg-emerald-500" 
+          subtitle="Cumplimiento Normativo (China/UE/FDA)"
+        />
+        <CardKPI 
+          title="Riesgo Financiero" 
+          value={`$${kpis.riesgoFinanciero.toLocaleString()}`} 
+          icon={DollarSign} 
+          colorClass="before:from-rose-400 before:to-red-600 bg-rose-500"
+          subtitle="Pérdida estimada por rechazos"
+        />
+        <CardKPI 
+          title="Alertas Activas" 
+          value={kpis.alertasActivas} 
+          icon={AlertTriangle} 
+          colorClass="before:from-amber-400 before:to-orange-500 bg-amber-500"
+          subtitle="Térmicas y Dosificación"
+        />
+        <CardKPI 
+          title="Eventos Inmutables" 
+          value={kpis.totalEventos} 
+          icon={Activity} 
+          colorClass="before:from-blue-400 before:to-indigo-600 bg-indigo-500"
+          subtitle="Registrados en Blockchain SHA-256"
+        />
+      </div>
 
-          {resultado && (
-            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm">
-              <h3 className="text-emerald-800 font-bold text-sm mb-1">Integridad Validada</h3>
-              <p className="text-xs text-emerald-600 mb-2">Hash almacenado en bloque logístico.</p>
-              <code className="block bg-emerald-100 text-emerald-900 p-2 rounded text-[10px] break-all font-mono border border-emerald-300">
-                {resultado.hashGenerado}
-              </code>
-            </div>
-          )}
-        </div>
-
-        <div className="xl:col-span-3 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-              <span className="text-slate-500 text-xs font-bold uppercase tracking-wide">Promedio Térmico</span>
-              <div className="text-3xl font-black text-slate-800 mt-2">{tempPromedio}°C</div>
-            </div>
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-              <span className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pico Máximo</span>
-              <div className="text-3xl font-black text-slate-800 mt-2">{tempMaxima}°C</div>
-            </div>
-            <div className={`p-5 rounded-xl shadow-sm border ${cadenaRota ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
-              <span className={`text-xs font-bold uppercase tracking-wide ${cadenaRota ? 'text-red-600' : 'text-emerald-600'}`}>Estado de Carga</span>
-              <div className={`text-2xl font-black mt-2 ${cadenaRota ? 'text-red-700' : 'text-emerald-700'}`}>
-                {cadenaRota ? 'ALERTA TÉRMICA' : 'RANGO ÓPTIMO'}
-              </div>
-            </div>
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        
+        {/* Chart 1 */}
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+          className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100"
+        >
+          <div className="flex items-center space-x-3 mb-6">
+            <ThermometerSnowflake className="text-cyan-500 w-6 h-6" />
+            <h2 className="text-xl font-bold text-gray-800">Telemetría Térmica (Lote en Tránsito)</h2>
           </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold text-slate-800 mb-4">Fluctuación Térmica en Tiempo Real (Lote #{formData.loteId})</h2>
-            <div className="h-72 w-full">
-              {historial.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={historial} margin={{ top: 5, right: 20, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="hora" stroke="#64748b" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                    <YAxis stroke="#64748b" tick={{fontSize: 12}} domain={['dataMin - 2', 'dataMax + 2']} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <ReferenceLine y={-18} stroke="#ef4444" strokeDasharray="4 4" label={{ position: 'insideTopLeft', value: 'Límite Cadena Frío (-18°C)', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
-                    <Line type="monotone" dataKey="temperatura" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-slate-400 font-medium">Registra eventos logísticos para el modelo analítico.</div>
-              )}
-            </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={dataTransporte}>
+                <defs>
+                  <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
+                <RechartsTooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} 
+                />
+                <Legend />
+                <Area type="monotone" dataKey="temp" name="Temp. Cámara (°C)" stroke="#06b6d4" strokeWidth={3} fillOpacity={1} fill="url(#colorTemp)" />
+                <Line type="monotone" dataKey="ext" name="Temp. Exterior (Open-Meteo)" stroke="#f59e0b" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+        </motion.div>
+
+        {/* Chart 2 */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+          className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100"
+        >
+          <div className="flex items-center space-x-3 mb-6">
+            <Activity className="text-indigo-500 w-6 h-6" />
+            <h2 className="text-xl font-bold text-gray-800">Dosificación Metabisulfito vs Normativa</h2>
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataDosificacion} barSize={32}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
+                <RechartsTooltip cursor={{fill: '#f3f4f6'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                <Legend />
+                <Bar dataKey="ppm" name="Medición (ppm)" radius={[6, 6, 0, 0]}>
+                  {dataDosificacion.map((entry, index) => (
+                    <cell key={`cell-${index}`} fill={entry.estado === 'CRITICO' ? '#ef4444' : entry.estado === 'ALERTA' ? '#f59e0b' : '#10b981'} />
+                  ))}
+                </Bar>
+                <Line type="stepAfter" dataKey="limite" name="Límite Normativo" stroke="#6366f1" strokeWidth={3} dot={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+
       </div>
     </div>
   );
-};
-
-export default Dashboard;
+}

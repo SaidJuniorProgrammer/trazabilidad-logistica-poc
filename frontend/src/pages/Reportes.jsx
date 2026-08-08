@@ -1,109 +1,207 @@
-import { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useState } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  ScatterChart, Scatter, ZAxis, Cell
+} from 'recharts';
+import { PieChart, Pie } from 'recharts';
+import { FileBarChart, Filter, Download, ArrowTrendingUp } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const Reportes = () => {
-  const [datos, setDatos] = useState([]);
-  const [precioMercado, setPrecioMercado] = useState(0);
-  const [config, setConfig] = useState({ umbral_temperatura: -18 });
+  const [mercado, setMercado] = useState('China (GACC)');
 
-  const KILOS_POR_LOTE = 10000; 
+  // Mock Data: Porcentaje de Lotes por Mercado
+  const dataCumplimiento = [
+    { name: 'Ene', Aprobados: 85, Alertas: 10, Criticos: 5 },
+    { name: 'Feb', Aprobados: 90, Alertas: 8, Criticos: 2 },
+    { name: 'Mar', Aprobados: 75, Alertas: 15, Criticos: 10 },
+    { name: 'Abr', Aprobados: 95, Alertas: 5, Criticos: 0 },
+    { name: 'May', Aprobados: 88, Alertas: 10, Criticos: 2 },
+  ];
 
-  useEffect(() => {
-    
-    const fetchData = async () => {
-      try {
-        const resConf = await fetch('http://localhost:3001/api/configuracion');
-        if (resConf.ok) setConfig(await resConf.json());
+  // Mock Data: Ranking de Operarios
+  const dataOperarios = [
+    { name: 'Juan P.', desviacion: 12 },
+    { name: 'Carlos R.', desviacion: 8 },
+    { name: 'Ana M.', desviacion: 4 },
+    { name: 'Luis V.', desviacion: 2 },
+    { name: 'Pedro C.', desviacion: 1 },
+  ];
 
-    
-        const resEventos = await fetch('http://localhost:3001/api/eventos');
-        if (resEventos.ok) setDatos(await resEventos.json());
+  // Mock Data: Riesgo Financiero por Mercado (Pie Chart)
+  const dataRiesgo = [
+    { name: 'China', value: 45000, fill: '#ef4444' },
+    { name: 'UE', value: 12000, fill: '#f59e0b' },
+    { name: 'FDA', value: 8000, fill: '#3b82f6' },
+  ];
 
-        const resPrecio = await fetch('http://localhost:3001/api/mercado/precio-camaron');
-        if (resPrecio.ok) {
-          const dataPrecio = await resPrecio.json();
-          setPrecioMercado(parseFloat(dataPrecio.precio) || 0);
-        }
-      } catch (error) {
-        console.error("Error cargando BI:", error);
-      }
-    };
-    fetchData();
-  }, []);
-
-  const totalEventos = datos.length;
-  const alertas = datos.filter(d => parseFloat(d.temperatura) > parseFloat(config.umbral_temperatura));
-  const porcentajeAlertas = totalEventos > 0 ? ((alertas.length / totalEventos) * 100).toFixed(1) : 0;
-  const riesgoFinanciero = (alertas.length > 0 ? KILOS_POR_LOTE * precioMercado : 0).toLocaleString('en-US');
-
-  const incidentesPorUbicacion = alertas.reduce((acc, curr) => {
-    const found = acc.find(item => item.ubicacion === curr.ubicacion);
-    if (found) found.alertas += 1;
-    else acc.push({ ubicacion: curr.ubicacion, alertas: 1 });
-    return acc;
-  }, []);
-
-  const exportarCSV = () => {
-    const encabezados = "Lote,Ubicacion,Temperatura,Estado\n";
-    const filas = datos.map(d => `${d.lote_id},${d.ubicacion},${d.temperatura},${d.temperatura > config.umbral_temperatura ? 'ALERTA' : 'OPTIMO'}`).join("\n");
-    const blob = new Blob([encabezados + filas], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute("download", "reporte_bi_camaron.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const exportarReporte = () => {
+    // Simula una exportación para el video
+    alert("Generando PDF Analítico (Simulación para grabación)...");
   };
 
   return (
-    <div className="p-8 w-full font-sans">
-      <header className="mb-8 border-b border-slate-200 pb-4 flex justify-between items-end">
+    <div className="p-8 w-full min-h-screen bg-slate-50 font-sans">
+      <header className="mb-10 flex flex-col md:flex-row justify-between md:items-end gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Inteligencia de Negocios (BI)</h1>
-          <p className="text-slate-500 mt-1">Cruce de telemetría y datos de mercado de todos los lotes</p>
+          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-indigo-600">
+            Inteligencia de Negocios (DW)
+          </h1>
+          <p className="text-slate-500 font-medium mt-2 tracking-wide flex items-center gap-2">
+            <FileBarChart className="w-4 h-4" />
+            Análisis Dimensional y Reportes Gerenciales
+          </p>
         </div>
-        <button onClick={exportarCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition flex items-center gap-2">
-          Descargar Reporte CSV
-        </button>
+        
+        <div className="flex gap-4">
+          <div className="flex bg-white shadow-sm border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 ring-indigo-500">
+            <div className="pl-4 pr-2 py-3 bg-slate-50 border-r border-slate-200 flex items-center text-slate-500">
+              <Filter className="w-4 h-4" />
+            </div>
+            <select 
+              value={mercado} 
+              onChange={(e) => setMercado(e.target.value)}
+              className="w-48 px-4 py-3 font-semibold text-slate-700 outline-none bg-white cursor-pointer"
+            >
+              <option>China (GACC)</option>
+              <option>Unión Europea (UE)</option>
+              <option>EE.UU. (FDA)</option>
+            </select>
+          </div>
+          
+          <button 
+            onClick={exportarReporte}
+            className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold py-3 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
+          >
+            <Download className="w-5 h-5" /> Exportar
+          </button>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-slate-500 text-xs font-bold uppercase">Eventos Totales</span>
-          <div className="text-3xl font-black text-slate-800 mt-2">{totalEventos}</div>
-        </div>
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-slate-500 text-xs font-bold uppercase">Tasa de Incidencias</span>
-          <div className="text-3xl font-black text-amber-600 mt-2">{porcentajeAlertas}%</div>
-        </div>
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-          <span className="text-slate-500 text-xs font-bold uppercase">Precio Mercado (FRED)</span>
-          <div className="text-3xl font-black text-sky-600 mt-2">${precioMercado.toFixed(2)}</div>
-        </div>
-        <div className="bg-red-50 p-5 rounded-xl shadow-sm border border-red-200">
-          <span className="text-red-600 text-xs font-bold uppercase">Riesgo Financiero Estimado</span>
-          <div className="text-3xl font-black text-red-700 mt-2">${riesgoFinanciero}</div>
-          <span className="text-[10px] text-red-500">Valor de pérdida si los lotes se descartan</span>
-        </div>
-      </div>
-
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h2 className="text-lg font-bold text-slate-800 mb-6">Puntos de Control Críticos (Concentración de Alertas)</h2>
-        <div className="h-72 w-full">
-          {incidentesPorUbicacion.length > 0 ? (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Gráfica 1: Barras Apiladas */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-xl border border-slate-100"
+        >
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="p-2 bg-indigo-50 rounded-lg">
+              <BarChart className="text-indigo-600 w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Cumplimiento Normativo de SO₂</h2>
+              <p className="text-xs text-slate-500">Histórico de lotes exportados a {mercado}</p>
+            </div>
+          </div>
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={incidentesPorUbicacion} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="ubicacion" stroke="#64748b" tick={{fontSize: 12}} />
-                <YAxis stroke="#64748b" tick={{fontSize: 12}} allowDecimals={false} />
-                <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                <Bar dataKey="alertas" fill="#ef4444" radius={[4, 4, 0, 0]} name="N° de Alertas Térmicas" />
+              <BarChart data={dataCumplimiento} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} 
+                  cursor={{fill: '#f8fafc'}}
+                />
+                <Legend iconType="circle" />
+                <Bar dataKey="Aprobados" stackId="a" fill="#10b981" radius={[0, 0, 4, 4]} />
+                <Bar dataKey="Alertas" stackId="a" fill="#f59e0b" />
+                <Bar dataKey="Criticos" stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          ) : (
-            <div className="flex h-full items-center justify-center text-slate-400 font-medium">No se registran alertas térmicas que analizar.</div>
-          )}
-        </div>
+          </div>
+        </motion.div>
+
+        {/* Gráfica 2: Pie Chart Riesgo */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100"
+        >
+          <div className="flex items-center space-x-3 mb-2">
+            <div className="p-2 bg-rose-50 rounded-lg">
+              <ArrowTrendingUp className="text-rose-600 w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Riesgo Financiero</h2>
+              <p className="text-xs text-slate-500">Pérdida por mercado (USD)</p>
+            </div>
+          </div>
+          <div className="h-64 flex flex-col items-center justify-center relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={dataRiesgo}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                  stroke="none"
+                >
+                  {dataRiesgo.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value) => `$${value.toLocaleString()}`}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-2xl font-black text-slate-800">$65K</span>
+              <span className="text-xs text-slate-500 font-medium">Total Riesgo</span>
+            </div>
+          </div>
+          <div className="flex justify-center gap-4 mt-4 text-xs font-bold text-slate-600">
+            <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500"></span> China</div>
+            <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-500"></span> UE</div>
+            <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-500"></span> FDA</div>
+          </div>
+        </motion.div>
+
+        {/* Gráfica 3: Ranking Operarios */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-xl border border-slate-100"
+        >
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="p-2 bg-amber-50 rounded-lg">
+              <Filter className="text-amber-600 w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Ranking Operacional de Dosificación</h2>
+              <p className="text-xs text-slate-500">Tasa de desviación respecto al límite normativo (%) por operario</p>
+            </div>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart layout="vertical" data={dataOperarios} margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                <XAxis type="number" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#475569', fontWeight: 600}} width={80} />
+                <Tooltip 
+                  cursor={{fill: '#f8fafc'}}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                  formatter={(value) => [`${value}%`, 'Tasa de Desviación']}
+                />
+                <Bar dataKey="desviacion" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={24}>
+                  {dataOperarios.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index === 0 ? '#ef4444' : index === 1 ? '#f59e0b' : '#8b5cf6'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+
       </div>
     </div>
   );
