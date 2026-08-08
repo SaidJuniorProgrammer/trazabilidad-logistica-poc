@@ -1,148 +1,165 @@
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
-import { Truck, ThermometerSnowflake, Clock, Map, ClipboardList, Copy, Check } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Header from '../components/common/Header.jsx';
+import KPICard from '../components/common/KPICard.jsx';
+import AlertBanner from '../components/common/AlertBanner.jsx';
+import ChartCard from '../components/common/ChartCard.jsx';
+import TransporteFilters from '../components/transporte/TransporteFilters.jsx';
+import TransporteTable from '../components/transporte/TransporteTable.jsx';
+import TemperaturaSerieChart from '../components/charts/TemperaturaSerieChart.jsx';
+import AlertasPorRutaChart from '../components/charts/AlertasPorRutaChart.jsx';
+import ClimaCorrelacionChart from '../components/charts/ClimaCorrelacionChart.jsx';
+import TiempoTrasladoChart from '../components/charts/TiempoTrasladoChart.jsx';
+import { useTransporteFiltrado } from '../hooks/useTransporte.js';
+import useAnimatedNumber from '../hooks/useAnimatedNumber.js';
+import { api } from '../services/api.js';
+import { formatCurrency } from '../utils/formatters.js';
+import { COLORS } from '../utils/colors.js';
+
+function exportarCSV(rows) {
+  const headers = ['lote_id', 'tipo_producto', 'ruta', 'temperatura_inicial_c', 'temperatura_llegada_c', 'duracion_horas', 'estado_recepcion', 'decision_inspector', 'hash'];
+  const line = (r) => headers.map((h) => `"${r[h] ?? ''}"`).join(',');
+  const csv = [headers.join(','), ...rows.map(line)].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `transporte_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Transporte() {
-  const [lotes, setLotes] = useState([]);
-  const [serieTemporal, setSerieTemporal] = useState([]);
-  const [copiado, setCopiado] = useState('');
+  const navigate = useNavigate();
+  const [filtros, setFiltros] = useState({ busqueda: '', tipo: '', ruta: '', fechaIni: '', fechaFin: '' });
+  const { transportes, todos } = useTransporteFiltrado(filtros);
+  const [loteSeleccionado, setLoteSeleccionado] = useState('ECU-FINCA-007-2026-08-08');
+  const [kpisT, setKpisT] = useState(null);
+  const [tiempos, setTiempos] = useState([]);
+  const [clima, setClima] = useState(null);
+  const [climaCargando, setClimaCargando] = useState(false);
 
   useEffect(() => {
-    // Simulación de datos para la PoC
-    const mockSerie = Array.from({ length: 15 }).map((_, i) => {
-      const temp = -17 + Math.sin(i) * 2;
-      return {
-        hora: `1${i}:00`,
-        temp_camara: temp,
-        temp_ext: 28 + Math.cos(i) * 3,
-        alerta: temp > -18
-      };
-    });
-    setSerieTemporal(mockSerie);
-
-    setLotes([
-      { id: 'ECU-FINCA-001', temp_ini: -20, temp_fin: -17.5, duracion: '3h 15m', estado: 'ALERTA_TEMP', decision: 'Inspección Ext.', hash: 'a8b3...2b5' },
-      { id: 'ECU-FINCA-002', temp_ini: 2, temp_fin: 3.5, duracion: '2h 40m', estado: 'DENTRO_RANGO', decision: 'Aprobado', hash: 'c7d3...1b3' },
-      { id: 'ECU-FINCA-003', temp_ini: -18, temp_fin: -12.0, duracion: '4h 50m', estado: 'FUERA_RANGO', decision: 'RECHAZADO', hash: 'f9a2...e0f' },
-      { id: 'ECU-FINCA-004', temp_ini: -22, temp_fin: -19.5, duracion: '1h 30m', estado: 'DENTRO_RANGO', decision: 'Aprobado', hash: 'b4c9...7e5' },
-    ]);
+    api.getKpisTransporte().then(setKpisT);
+    api.getTiemposTraslado().then(setTiempos);
   }, []);
 
-  const copiarHash = (hash) => {
-    navigator.clipboard.writeText(hash);
-    setCopiado(hash);
-    setTimeout(() => setCopiado(''), 2000);
-  };
+  const loteActual = useMemo(() => todos.find((t) => t.lote_id === loteSeleccionado) || todos[0] || { lote_id: '', serie: [], tipo_producto: 'Fresco' }, [todos, loteSeleccionado]);
 
-  const getStatusBadge = (estado) => {
-    if (estado === 'DENTRO_RANGO') return <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold">DENTRO RANGO</span>;
-    if (estado === 'ALERTA_TEMP') return <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold">ALERTA TÉRMICA</span>;
-    return <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-bold">FUERA DE RANGO</span>;
-  };
+  useEffect(() => {
+    let activo = true;
+    if (loteActual?.gps_lat == null) return undefined;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- iniciamos estado de carga para la consulta climática
+    setClimaCargando(true);
+    api
+      .getClima(loteActual.gps_lat, loteActual.gps_lon)
+      .then((c) => {
+        if (activo) setClima(c);
+      })
+      .catch(() => {
+        if (activo) setClima(null);
+      })
+      .finally(() => {
+        if (activo) setClimaCargando(false);
+      });
+    return () => {
+      activo = false;
+    };
+  }, [loteActual.gps_lat, loteActual.gps_lon]);
+
+  const alertasPorRuta = useMemo(() => {
+    const mapa = {};
+    todos.forEach((t) => {
+      mapa[t.ruta] = (mapa[t.ruta] || 0) + (t.alertas_count || 0);
+    });
+    return Object.entries(mapa).map(([ruta, alertas]) => ({ ruta, alertas }));
+  }, [todos]);
+
+  const rutaMasRiesgo = useMemo(() => (alertasPorRuta.length ? [...alertasPorRuta].sort((a, b) => b.alertas - a.alertas)[0] : null), [alertasPorRuta]);
+
+  const tempProm = useAnimatedNumber(kpisT?.temp_promedio ?? 0, 900, 1);
+  const tiempoProm = useAnimatedNumber(kpisT?.tiempo_promedio_traslado ?? 0, 900, 1);
 
   return (
-    <div className="p-8 w-full min-h-screen bg-slate-50">
-      <header className="mb-10 flex flex-col md:flex-row justify-between md:items-end gap-6">
-        <div>
-          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">
-            Eslabón 1: Transporte
-          </h1>
-          <p className="text-slate-500 font-medium mt-2 flex items-center gap-2">
-            <Truck className="w-5 h-5" /> Control Inmutable de la Cadena de Frío Terrestre
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <select className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-600 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
-            <option>Lote: ECU-FINCA-001</option>
-            <option>Lote: ECU-FINCA-002</option>
-          </select>
-          <select className="px-4 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-slate-600 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
-            <option>Congelado (≤-18°C)</option>
-            <option>Fresco (0°C - 4°C)</option>
-          </select>
-        </div>
-      </header>
+    <div className="space-y-6">
+      <Header
+        title="Eslabón 1 — Transporte Terrestre"
+        subtitle="Telemetría térmica, GPS y cadena de frío del camarón (Litopenaeus vannamei)"
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className="bg-white p-6 rounded-2xl shadow-md border border-slate-100 flex items-center gap-4">
-          <div className="p-4 bg-blue-50 rounded-xl"><Clock className="w-8 h-8 text-blue-500"/></div>
-          <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">T. Promedio Traslado</p>
-            <h3 className="text-3xl font-black text-slate-800 mt-1">2h 45m</h3>
-          </div>
-        </motion.div>
-        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} transition={{delay:0.1}} className="bg-white p-6 rounded-2xl shadow-md border border-slate-100 flex items-center gap-4">
-          <div className="p-4 bg-cyan-50 rounded-xl"><Map className="w-8 h-8 text-cyan-500"/></div>
-          <div>
-            <p className="text-sm text-slate-500 font-bold uppercase">Ruta Mayor Riesgo</p>
-            <h3 className="text-xl font-black text-slate-800 mt-1">Santa Elena - GYE</h3>
-          </div>
-        </motion.div>
-        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} transition={{delay:0.2}} className="lg:col-span-2 bg-gradient-to-r from-slate-800 to-slate-900 p-6 rounded-2xl shadow-lg border border-slate-700 flex flex-col justify-center">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-2"><ThermometerSnowflake className="w-5 h-5 text-cyan-400"/> Correlación Clima vs Cámara</h3>
-          <p className="text-slate-300 text-sm">El 85% de las desviaciones térmicas ocurren cuando la Temp. Exterior (Open-Meteo) supera los 32°C en la ruta.</p>
-        </motion.div>
+      <TransporteFilters
+        filtros={filtros}
+        onChange={setFiltros}
+        onExportar={() => exportarCSV(transportes)}
+      />
+
+      {rutaMasRiesgo && rutaMasRiesgo.alertas > 0 && (
+        <AlertBanner
+          type="alerta"
+          message={`Ruta ${rutaMasRiesgo.ruta} presenta ${rutaMasRiesgo.alertas} eventos fuera de rango en las últimas horas. Temp. ambiente ${clima?.fuente === 'Open-Meteo' ? `Open-Meteo EN VIVO: ${clima.temperatura}°C` : 'Open-Meteo: 31°C'}.`}
+          suggestion="Revisar unidad refrigerada y registrar mantenimiento preventivo antes del próximo despacho."
+        />
+      )}
+
+      {/* KPIs transporte */}
+      <section className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KPICard title="Temp. promedio viaje" value={`${tempProm.toFixed(1)}°C`} trend="+0.2" trendUp={false} color={COLORS.blue} progress={tempProm * 20} />
+        <KPICard title="Tiempo promedio traslado" value={`${tiempoProm.toFixed(1)}h`} trend="-18 min" trendUp color={COLORS.green} progress={Math.min((tiempoProm / 4) * 100, 100)} />
+        <KPICard title="Alertas térmicas (hoy)" value={kpisT?.alertas_termicas_hoy ?? 0} trend="+1" trendUp={false} color={COLORS.amber} progress={60} />
+        <KPICard title="Lotes rechazados (mes)" value={kpisT?.lotes_rechazados_mes ?? 0} trend={formatCurrency(kpisT?.perdida_estimada ?? 0)} trendUp={false} color={COLORS.red} progress={54} />
+      </section>
+
+      {/* Serie temporal + correlación clima */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <ChartCard
+          title="Serie temporal de temperatura"
+          subtitle="Lecturas cada ~30 min durante el traslado"
+          badge={
+            <select
+              value={loteSeleccionado}
+              onChange={(e) => setLoteSeleccionado(e.target.value)}
+              aria-label="Seleccionar lote"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-[11px] text-sky-400 focus:border-sky-500 focus:outline-none"
+            >
+              {todos.map((t) => (
+                <option key={t.lote_id} value={t.lote_id}>
+                  {t.lote_id}
+                </option>
+              ))}
+            </select>
+          }
+        >
+          <TemperaturaSerieChart serie={loteActual.serie} tipoProducto={loteActual.tipo_producto} loteId={loteActual.lote_id} />
+        </ChartCard>
+
+        <ChartCard title="Correlación clima vs temperatura cámara" subtitle="Open-Meteo (ambiente) vs telemetría de cámara">
+          <ClimaCorrelacionChart serie={loteActual.serie} loteId={loteActual.lote_id} clima={clima} cargando={climaCargando} />
+        </ChartCard>
       </div>
 
-      <motion.div initial={{opacity:0}} animate={{opacity:1}} className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 mb-8">
-        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><ThermometerSnowflake className="text-blue-500 w-6 h-6"/> Serie Temporal de Temperatura</h2>
-        <div className="h-80 w-full">
-          <ResponsiveContainer>
-            <LineChart data={serieTemporal}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-              <XAxis dataKey="hora" axisLine={false} tickLine={false} tick={{fill: '#64748b'}}/>
-              <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} domain={[-25, -5]}/>
-              <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fill: '#f59e0b'}} domain={[20, 35]}/>
-              <RechartsTooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}/>
-              <Legend/>
-              <ReferenceArea yAxisId="left" y1={-18} y2={-5} fill="#fecaca" fillOpacity={0.2} />
-              <Line yAxisId="left" type="monotone" dataKey="temp_camara" name="T. Cámara (°C)" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, fill: '#3b82f6', strokeWidth: 2}} activeDot={{r: 6}} />
-              <Line yAxisId="right" type="monotone" dataKey="temp_ext" name="T. Exterior OpenMeteo (°C)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </motion.div>
+      {/* Alertas por ruta + tiempos de traslado */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <ChartCard
+          title="Alertas por ruta"
+          subtitle="Volumen de eventos fuera de rango acumulados por ruta"
+          badge={<span className="rounded-full bg-red-500/15 px-2.5 py-1 text-[11px] font-bold text-red-400">&gt;10 = riesgo alto</span>}
+        >
+          <AlertasPorRutaChart data={alertasPorRuta} />
+        </ChartCard>
 
-      <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <ClipboardList className="text-indigo-500 w-6 h-6" />
-          <h2 className="text-xl font-bold text-slate-800">Tabla de Eventos de Transporte (Bloques Inmutables)</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-400 font-extrabold border-b border-slate-200">
-              <tr>
-                <th className="px-6 py-4">Lote ID</th>
-                <th className="px-6 py-4">Temp Inicial</th>
-                <th className="px-6 py-4">Temp Llegada</th>
-                <th className="px-6 py-4">Duración</th>
-                <th className="px-6 py-4">Estado Recepción</th>
-                <th className="px-6 py-4">Hash Blockchain</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {lotes.map((lote, i) => (
-                <tr key={i} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 font-bold text-slate-800">{lote.id}</td>
-                  <td className="px-6 py-4">{lote.temp_ini}°C</td>
-                  <td className="px-6 py-4 font-bold">{lote.temp_fin}°C</td>
-                  <td className="px-6 py-4">{lote.duracion}</td>
-                  <td className="px-6 py-4">{getStatusBadge(lote.estado)}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">{lote.hash}</span>
-                      <button onClick={() => copiarHash(lote.hash)} className="text-slate-400 hover:text-indigo-600 transition">
-                        {copiado === lote.hash ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+        <ChartCard title="Tiempo promedio de traslado por ruta" subtitle="Comparativa con línea de tiempo máximo permitido (4h)">
+          <TiempoTrasladoChart data={tiempos} />
+        </ChartCard>
+      </div>
+
+      {/* Registros de transporte */}
+      <section className="animate-fade-in-up">
+        <h3 className="mb-3 text-sm font-bold text-slate-100">Registros de eventos de transporte</h3>
+        <TransporteTable
+          transportes={transportes}
+          onVerificar={(lote) => navigate(`/auditoria?lote=${encodeURIComponent(lote)}`)}
+        />
+      </section>
     </div>
   );
 }

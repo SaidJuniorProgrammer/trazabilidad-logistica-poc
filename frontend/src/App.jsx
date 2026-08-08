@@ -1,60 +1,78 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Activity, Truck, FlaskConical, ShieldCheck, Settings } from 'lucide-react';
-import Dashboard from './pages/Dashboard';
-import Transporte from './pages/Transporte';
-import Dosificacion from './pages/Dosificacion';
-import Auditoria from './pages/Auditoria';
+import { lazy, Suspense, useState } from 'react';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { Menu } from 'lucide-react';
+import { AppProvider } from './context/AppContext.jsx';
+import { SidebarContent, SidebarDrawer, BottomNav } from './components/common/Sidebar.jsx';
+import ToastContainer from './components/common/Toast.jsx';
 
-const Sidebar = () => {
-  const location = useLocation();
-  const isActive = (path) => location.pathname === path;
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Transporte = lazy(() => import('./pages/Transporte.jsx'));
+const Dosificacion = lazy(() => import('./pages/Dosificacion.jsx'));
+const Auditoria = lazy(() => import('./pages/Auditoria.jsx'));
 
-  const NavItem = ({ to, icon: Icon, label }) => (
-    <Link to={to} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold ${isActive(to) ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
-      <Icon className={`w-5 h-5 ${isActive(to) ? 'text-indigo-200' : 'text-slate-400'}`} />
-      {label}
-    </Link>
-  );
-
+function Loader() {
   return (
-    <div className="w-64 bg-white h-screen fixed border-r border-slate-200 shadow-sm flex flex-col">
-      <div className="p-6 border-b border-slate-100">
-        <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-cyan-500 tracking-tight">
-          ShrimpColdChain
-        </h2>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">PoC Trazabilidad</p>
-      </div>
-      <nav className="flex-1 p-4 space-y-2">
-        <NavItem to="/" icon={Activity} label="Resumen Ejecutivo" />
-        <NavItem to="/transporte" icon={Truck} label="Transporte Terrestre" />
-        <NavItem to="/dosificacion" icon={FlaskConical} label="Planta Dosificación" />
-        <NavItem to="/auditoria" icon={ShieldCheck} label="Auditoría Blockchain" />
-      </nav>
-      <div className="p-4 border-t border-slate-100">
-        <button className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 w-full">
-          <Settings className="w-5 h-5 text-slate-400" /> Configuración
-        </button>
-      </div>
+    <div className="flex h-[50vh] items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-sky-500" />
     </div>
-  );
-};
-
-function App() {
-  return (
-    <Router>
-      <div className="min-h-screen bg-slate-50 flex font-sans">
-        <Sidebar />
-        <main className="flex-1 ml-64 overflow-x-hidden">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/transporte" element={<Transporte />} />
-            <Route path="/dosificacion" element={<Dosificacion />} />
-            <Route path="/auditoria" element={<Auditoria />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
   );
 }
 
-export default App;
+function MobileTopBar({ onOpenDrawer }) {
+  return (
+    <div className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-800 bg-slate-950/90 px-4 backdrop-blur lg:hidden">
+      <button
+        type="button"
+        aria-label="Abrir menú"
+        onClick={onOpenDrawer}
+        className="rounded-lg p-2 text-slate-400 hover:bg-slate-800"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+      <span className="text-sm font-black tracking-tight text-slate-100">🦐 ShrimpColdChain</span>
+    </div>
+  );
+}
+
+function Layout() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const location = useLocation();
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[220px] border-r border-slate-800 bg-slate-950 lg:block">
+        <SidebarContent />
+      </aside>
+
+      <SidebarDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <MobileTopBar onOpenDrawer={() => setDrawerOpen(true)} />
+
+      <div className="pb-20 lg:pb-0 lg:pl-[220px]">
+        <main key={location.pathname} className="mx-auto max-w-[1600px] p-4 md:p-6 lg:p-8">
+          <Suspense fallback={<Loader />}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/transporte" element={<Transporte />} />
+              <Route path="/dosificacion" element={<Dosificacion />} />
+              <Route path="/auditoria" element={<Auditoria />} />
+              <Route path="*" element={<Dashboard />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
+
+      <BottomNav />
+      <ToastContainer />
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AppProvider>
+      <Router>
+        <Layout />
+      </Router>
+    </AppProvider>
+  );
+}
