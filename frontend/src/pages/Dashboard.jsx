@@ -1,182 +1,198 @@
-import { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import Header from '../components/common/Header.jsx';
+import LiveIndicator from '../components/common/LiveIndicator.jsx';
+import KPICard from '../components/common/KPICard.jsx';
+import AlertBanner from '../components/common/AlertBanner.jsx';
+import HashDisplay from '../components/common/HashDisplay.jsx';
+import StatusBadge from '../components/common/StatusBadge.jsx';
+import ChartCard from '../components/common/ChartCard.jsx';
+import DataTable from '../components/common/DataTable.jsx';
+import AlertasEvolutionChart from '../components/charts/AlertasEvolutionChart.jsx';
+import NormativaDonutChart from '../components/charts/NormativaDonutChart.jsx';
+import useAlertas from '../hooks/useAlertas.js';
+import useAnimatedNumber from '../hooks/useAnimatedNumber.js';
+import { api } from '../services/api.js';
+import { useApp } from '../context/AppContext.jsx';
+import { formatAhoraEcuador, formatCurrency, formatFechaHoraEC } from '../utils/formatters.js';
+import { COLORS } from '../utils/colors.js';
 
-const Dashboard = () => {
-  const [formData, setFormData] = useState({ loteId: '1', temperatura: '', ubicacion: '' });
-  const [resultado, setResultado] = useState(null);
-  const [error, setError] = useState(null);
-  const [historial, setHistorial] = useState([]);
-  
-  const [climaExterior, setClimaExterior] = useState(null);
-  const [precioMercado, setPrecioMercado] = useState("Cargando...");
+export default function Dashboard() {
+  const { showToast } = useApp();
+  const { alertaCritica, evolucion, normativa, criticos, kpis, totalAlertasHoy } = useAlertas();
+  const [demoCargando, setDemoCargando] = useState(false);
+  const [soloCriticos, setSoloCriticos] = useState(false);
 
-  const tempPromedio = historial.length > 0 ? (historial.reduce((acc, curr) => acc + curr.temperatura, 0) / historial.length).toFixed(1) : 0;
-  const tempMaxima = historial.length > 0 ? Math.max(...historial.map(h => h.temperatura)).toFixed(1) : 0;
-  const cadenaRota = historial.some(h => h.temperatura > -18);
+  const cumplimientoAnim = useAnimatedNumber(kpis?.cumplimiento_termico ?? 0, 1000, 1);
+  const dosificacionAnim = useAnimatedNumber(kpis?.dosificacion_aprobada ?? 0, 1000, 1);
+  const riesgoAnim = useAnimatedNumber(kpis?.riesgo_acumulado ?? 0, 1000, 0);
 
-  const cargarDatosExternos = async () => {
+  const generarDemo = async () => {
+    setDemoCargando(true);
     try {
-      const resClima = await fetch('https://api.open-meteo.com/v1/forecast?latitude=-2.23&longitude=-80.91&current_weather=true');
-      const dataClima = await resClima.json();
-      setClimaExterior(dataClima.current_weather.temperature);
-    } catch (err) { console.error("Error Clima:", err); }
-
-    try {
-      const resScraping = await fetch('http://localhost:3001/api/mercado/precio-camaron');
-      const dataScraping = await resScraping.json();
-      let periodoTexto = '';
-      if (dataScraping.periodo) {
-        const fecha = new Date(dataScraping.periodo + 'T00:00:00');
-        periodoTexto = ` (${fecha.toLocaleDateString('es-EC', { month: 'long', year: 'numeric' })})`;
-      }
-      setPrecioMercado(`$${dataScraping.precio} ${dataScraping.moneda}${periodoTexto}`);
-    } catch (err) { setPrecioMercado("Error de Scraping"); }
+      const res = await api.generarDatosDemo();
+      showToast(`Se generaron ${res.lotes} lotes de transporte y ${res.dosificaciones} dosificaciones de demostración.`, 'success');
+    } catch {
+      showToast('Error al generar datos demo.', 'error');
+    } finally {
+      setDemoCargando(false);
+    }
   };
 
-  const cargarHistorial = async () => {
-    try {
-      const response = await fetch(`http://localhost:3001/api/eventos/${formData.loteId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const datosFormateados = data.map(item => ({
-          ...item,
-          hora: new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          temperatura: parseFloat(item.temperatura)
-        }));
-        setHistorial(datosFormateados);
-      }
-    } catch (err) { console.error(err); }
-  };
+  const filas = soloCriticos ? criticos.filter((c) => c.estado === 'critico') : criticos;
 
-  useEffect(() => {
-    cargarHistorial();
-    cargarDatosExternos();
-  }, []);
-
-  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setResultado(null);
-    setError(null);
-
-    try {
-      const response = await fetch('http://localhost:3001/api/evento', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          loteId: parseInt(formData.loteId),
-          temperatura: parseFloat(formData.temperatura),
-          ubicacion: formData.ubicacion
-        })
-      });
-
-      if (!response.ok) throw new Error('Error en el servidor');
-
-      const data = await response.json();
-      setResultado(data);
-      cargarHistorial();
-      setFormData({ ...formData, temperatura: '', ubicacion: '' });
-    } catch (err) { setError(err.message); }
-  };
+  const columnas = [
+    {
+      key: 'lote_id',
+      label: 'Lote ID',
+      render: (r) => <span className="font-mono text-xs text-sky-400">{r.lote_id}</span>,
+    },
+    {
+      key: 'eslabon',
+      label: 'Eslabón',
+      render: (r) => (
+        <span className={r.eslabon === 'Transporte' ? 'text-sky-300' : 'text-amber-300'}>{r.eslabon}</span>
+      ),
+    },
+    {
+      key: 'timestamp',
+      label: 'Timestamp',
+      render: (r) => <span className="text-slate-400">{formatFechaHoraEC(r.timestamp)}</span>,
+    },
+    {
+      key: 'problema',
+      label: 'Problema',
+      render: (r) => <span className="max-w-[220px] truncate text-slate-300">{r.problema}</span>,
+    },
+    {
+      key: 'estado',
+      label: 'Estado',
+      render: (r) => <StatusBadge status={r.estado} />,
+    },
+    {
+      key: 'hash',
+      label: 'Hash blockchain',
+      render: (r) => <HashDisplay hash={r.hash} />,
+    },
+    {
+      key: 'riesgo',
+      label: 'Riesgo USD',
+      cellClassName: 'font-bold',
+      render: (r) => (
+        <span className={r.riesgo > 0 ? 'text-red-400' : 'text-green-500'}>
+          {r.riesgo > 0 ? formatCurrency(r.riesgo) : '$0'}
+        </span>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-8 w-full">
-      <header className="flex justify-between items-end mb-8 border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800">Panel Principal</h1>
-          <p className="text-slate-500 mt-1">Supervisión de Trazabilidad Inteligente</p>
-        </div>
-        <div className="flex gap-4">
-          <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Clima Local (API)</span>
-            <span className="text-lg font-bold text-sky-600">{climaExterior !== null ? `${climaExterior}°C` : '...'}</span>
-          </div>
-          <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mercado (Scraping)</span>
-            <span className="text-lg font-bold text-emerald-600">{precioMercado}</span>
-          </div>
-        </div>
-      </header>
+    <div className="space-y-6">
+      <Header
+        title="Resumen Ejecutivo — Trazabilidad Inteligente del Camarón"
+        subtitle={`Sistema de trazabilidad blockchain con BI · Zona horaria Ecuador (GMT-5): ${formatAhoraEcuador()} GMT-5`}
+        right={
+          <>
+            <LiveIndicator />
+            <button
+              type="button"
+              onClick={generarDemo}
+              disabled={demoCargando}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-bold text-slate-200 transition-colors hover:border-sky-500 hover:text-sky-400 disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${demoCargando ? 'animate-spin' : ''}`} />
+              {demoCargando ? 'Generando…' : 'Generar Datos Demo'}
+            </button>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        <div className="xl:col-span-1 space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-2">Registrar Sensor</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">ID del Lote</label>
-                <input type="number" name="loteId" value={formData.loteId} onChange={handleChange} required 
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div> */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Temp. Contenedor (°C)</label>
-                <input type="number" step="0.1" name="temperatura" value={formData.temperatura} onChange={handleChange} required 
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Punto de Control</label>
-                <input type="text" name="ubicacion" value={formData.ubicacion} onChange={handleChange} required placeholder="Ej. Empacadora"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-              </div>
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-md transition duration-200 shadow-md text-sm">
-                Sellar Registro Seguro
-              </button>
-            </form>
-          </div>
+      {alertaCritica && (
+        <AlertBanner
+          type={alertaCritica.severidad}
+          message={alertaCritica.titulo}
+          suggestion={alertaCritica.suggestion || alertaCritica.sugerencia}
+        />
+      )}
 
-          {resultado && (
-            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-sm">
-              <h3 className="text-emerald-800 font-bold text-sm mb-1">Integridad Validada</h3>
-              <p className="text-xs text-emerald-600 mb-2">Hash almacenado en bloque logístico.</p>
-              <code className="block bg-emerald-100 text-emerald-900 p-2 rounded text-[10px] break-all font-mono border border-emerald-300">
-                {resultado.hashGenerado}
-              </code>
-            </div>
-          )}
-        </div>
+      {/* KPIs superiores */}
+      <section className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KPICard
+          title="Cumplimiento térmico"
+          value={`${cumplimientoAnim.toFixed(1)}%`}
+          trend="+1.8%"
+          trendUp
+          color={COLORS.green}
+          progress={cumplimientoAnim}
+        />
+        <KPICard
+          title="Dosificación aprobada"
+          value={`${dosificacionAnim.toFixed(1)}%`}
+          trend="+0.4%"
+          trendUp
+          color={COLORS.blue}
+          progress={dosificacionAnim}
+        />
+        <KPICard
+          title="Integridad blockchain"
+          value="100%"
+          trend="Estable"
+          trendUp
+          color={COLORS.amber}
+          progress={100}
+        />
+        <KPICard
+          title="Riesgo financiero acumulado"
+          value={formatCurrency(Math.round(riesgoAnim))}
+          trend="+$8.5k"
+          trendUp={false}
+          color={COLORS.red}
+          progress={Math.min((riesgoAnim / 150000) * 100, 100)}
+        />
+      </section>
 
-        <div className="xl:col-span-3 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-              <span className="text-slate-500 text-xs font-bold uppercase tracking-wide">Promedio Térmico</span>
-              <div className="text-3xl font-black text-slate-800 mt-2">{tempPromedio}°C</div>
-            </div>
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-              <span className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pico Máximo</span>
-              <div className="text-3xl font-black text-slate-800 mt-2">{tempMaxima}°C</div>
-            </div>
-            <div className={`p-5 rounded-xl shadow-sm border ${cadenaRota ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
-              <span className={`text-xs font-bold uppercase tracking-wide ${cadenaRota ? 'text-red-600' : 'text-emerald-600'}`}>Estado de Carga</span>
-              <div className={`text-2xl font-black mt-2 ${cadenaRota ? 'text-red-700' : 'text-emerald-700'}`}>
-                {cadenaRota ? 'ALERTA TÉRMICA' : 'RANGO ÓPTIMO'}
-              </div>
-            </div>
-          </div>
+      {/* Gráficos fila superior */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <ChartCard
+          title="Evolución de alertas — últimos 14 días"
+          subtitle="Serie térmica (azul) vs dosificación (ámbar), con línea de promedio"
+          badge={
+            <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-[11px] font-bold text-red-400">
+              +{totalAlertasHoy} alertas hoy
+            </span>
+          }
+        >
+          <AlertasEvolutionChart data={evolucion} />
+        </ChartCard>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold text-slate-800 mb-4">Fluctuación Térmica en Tiempo Real (Lote #{formData.loteId})</h2>
-            <div className="h-72 w-full">
-              {historial.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={historial} margin={{ top: 5, right: 20, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="hora" stroke="#64748b" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                    <YAxis stroke="#64748b" tick={{fontSize: 12}} domain={['dataMin - 2', 'dataMax + 2']} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <ReferenceLine y={-18} stroke="#ef4444" strokeDasharray="4 4" label={{ position: 'insideTopLeft', value: 'Límite Cadena Frío (-18°C)', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
-                    <Line type="monotone" dataKey="temperatura" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-slate-400 font-medium">Registra eventos logísticos para el modelo analítico.</div>
-              )}
-            </div>
-          </div>
-        </div>
+        <ChartCard
+          title="Distribución por normativa"
+          subtitle="Lotes según mercado destino y límite SO₂ residual"
+          badge={<span className="rounded-full bg-green-500/15 px-2.5 py-1 text-[11px] font-bold text-green-400">China ≤100ppm</span>}
+        >
+          <NormativaDonutChart data={normativa} aprobados={kpis?.dosificacion_aprobada ?? 87.5} />
+        </ChartCard>
       </div>
+
+      {/* Tabla de eventos críticos */}
+      <section className="animate-fade-in-up">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-100">Últimos eventos críticos</h3>
+            <p className="text-xs text-slate-500">Eventos de ambos eslabones con hash SHA-256 enlazado</p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={soloCriticos}
+              onChange={(e) => setSoloCriticos(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500"
+            />
+            <span className={`font-bold ${soloCriticos ? 'text-red-400' : 'text-slate-400'}`}>Solo críticos</span>
+          </label>
+        </div>
+        <DataTable columns={columnas} rows={filas} pageSize={5} />
+      </section>
     </div>
   );
-};
-
-export default Dashboard;
+}

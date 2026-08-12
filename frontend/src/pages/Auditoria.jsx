@@ -1,127 +1,122 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
+import Header from '../components/common/Header.jsx';
+import ChartCard from '../components/common/ChartCard.jsx';
+import DataTable from '../components/common/DataTable.jsx';
+import HashVerifier from '../components/auditoria/HashVerifier.jsx';
+import BlockchainTimeline from '../components/auditoria/BlockchainTimeline.jsx';
+import AuditSummary from '../components/auditoria/AuditSummary.jsx';
+import { useBlockchain } from '../hooks/useBlockchain.js';
+import { api } from '../services/api.js';
+import { formatFechaHoraEC, truncateHash } from '../utils/formatters.js';
 
-const Auditoria = () => {
-  const [historial, setHistorial] = useState([]);
-  const [loteId, setLoteId] = useState('1');
-  const [verificacion, setVerificacion] = useState(null);
-  const [cargando, setCargando] = useState(false);
+export default function Auditoria() {
+  const [searchParams] = useSearchParams();
+  const loteInicial = searchParams.get('lote') || undefined;
 
-  const cargarHistorial = () => {
-    fetch(`http://localhost:3001/api/eventos/${loteId}`)
-      .then(res => res.json())
-      .then(data => {
-        const datosFormateados = data.map(item => ({
-          ...item,
-          hora: new Date(item.timestamp).toLocaleString()
-        }));
-        setHistorial(datosFormateados);
-        setVerificacion(null);
-      })
-      .catch(err => console.error(err));
-  };
+  const { loteId, setLoteId, cadena, verificado, verificar, verificando, progreso, log, limpiar } = useBlockchain(loteInicial);
+  const [sugerencias, setSugerencias] = useState([]);
 
   useEffect(() => {
-    cargarHistorial();
-  }, [loteId]);
+    api.getLotes().then(setSugerencias);
+  }, []);
 
-  const verificarIntegridad = async () => {
-    setCargando(true);
-    try {
-      const res = await fetch(`http://localhost:3001/api/blockchain/verificar/${loteId}`);
-      const data = await res.json();
-      setTimeout(() => {
-        setVerificacion(data);
-        setCargando(false);
-      }, 800);
-    } catch (error) {
-      console.error(error);
-      setCargando(false);
+  useEffect(() => {
+    if (loteInicial) {
+      verificar(loteInicial);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const bloques = verificado?.bloques || cadena;
+
+  const columnasTransversal = [
+    {
+      key: 'index',
+      label: 'Bloque',
+      cellClassName: 'font-bold text-slate-200',
+      render: (r) => r.index,
+    },
+    {
+      key: 'tipoEvento',
+      label: 'Tipo',
+      render: (r) => <span className="capitalize text-slate-300">{r.tipoEvento}</span>,
+    },
+    {
+      key: 'timestamp',
+      label: 'Timestamp',
+      render: (r) => <span className="text-slate-400">{formatFechaHoraEC(r.timestamp)}</span>,
+    },
+    {
+      key: 'dato',
+      label: 'Dato crítico',
+      render: (r) => {
+        if (r.tipoEvento === 'transporte') return <span>Temp: {r.data.temp}°C</span>;
+        if (r.tipoEvento === 'dosificacion') return <span>Conc: {r.data.ppm ?? r.data.indic} ppm</span>;
+        if (r.tipoEvento === 'verificacion') return <span>Lab: {r.data.lab_ppm} ppm</span>;
+        return <span className="text-slate-500">{r.data.descripcion}</span>;
+      },
+    },
+    {
+      key: 'hash',
+      label: 'Hash',
+      render: (r) => <code className="font-mono text-xs text-sky-400">{truncateHash(r.hash_integridad, 4, 4)}</code>,
+    },
+    {
+      key: 'estado',
+      label: 'Estado',
+      render: (r) =>
+        r.valid === false ? (
+          <span className="font-bold text-red-400">✗ ALTERADO</span>
+        ) : (
+          <span className="font-bold text-green-500">✓ VÁLIDO</span>
+        ),
+    },
+  ];
 
   return (
-    <div className="p-8 w-full font-sans">
-      <header className="mb-8 border-b border-slate-200 pb-4 flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800">Libro Mayor Distribuido</h1>
-          <p className="text-slate-500 mt-1">Validación de Integridad y Encadenamiento (Blockchain)</p>
-        </div>
-        <div className="flex gap-4 items-center">
-          <label className="text-sm font-bold text-slate-600 uppercase">Filtrar Lote:</label>
-          <input 
-            type="number" 
-            value={loteId} 
-            onChange={(e) => setLoteId(e.target.value)}
-            className="w-20 px-3 py-2 border rounded-md font-bold text-center"
-          />
-        </div>
-      </header>
+    <div className="space-y-6">
+      <Header
+        title="Auditoría Blockchain"
+        subtitle="Verificación criptográfica SHA-256 para auditorías GACC / FDA / UE — inmutabilidad en segundos"
+        right={
+          <span className="inline-flex items-center gap-2 rounded-full border border-green-500/40 bg-green-500/10 px-3 py-1.5 text-xs font-bold text-green-500">
+            <ShieldCheck className="h-4 w-4" />
+            Recálculo desde bloque génesis
+          </span>
+        }
+      />
 
-      <div className="mb-6 flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <p className="text-sm text-slate-600">
-          Los bloques contienen el hash del registro anterior. Al verificar, el sistema valida la conexión de toda la cadena.
-        </p>
-        <button 
-          onClick={verificarIntegridad}
-          disabled={cargando || historial.length === 0}
-          className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-6 rounded-md transition shadow-md disabled:bg-slate-400"
-        >
-          {cargando ? 'Validando Enlaces...' : 'Verificar Integridad de Cadena'}
-        </button>
-      </div>
+      <HashVerifier
+        loteId={loteId}
+        setLoteId={setLoteId}
+        sugerencias={sugerencias}
+        onVerificar={(id) => verificar(id)}
+        verificando={verificando}
+        verificado={verificado}
+        progreso={progreso}
+        log={log}
+        limpiar={limpiar}
+      />
 
-      {verificacion && (
-        <div className={`mb-6 p-5 rounded-xl border flex items-center gap-4 shadow-sm ${verificacion.integra ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-300'}`}>
-          <div className={`text-4xl ${verificacion.integra ? 'text-emerald-500' : 'text-red-500'}`}>
-            {verificacion.integra ? '✓' : '✗'}
-          </div>
-          <div>
-            <h3 className={`font-bold text-lg ${verificacion.integra ? 'text-emerald-800' : 'text-red-800'}`}>
-              {verificacion.integra ? 'Cadena Íntegra Validada' : '¡Alerta! Alteración Detectada'}
-            </h3>
-            <p className={`text-sm font-medium ${verificacion.integra ? 'text-emerald-600' : 'text-red-600'}`}>
-              {verificacion.integra 
-                ? `Los ${verificacion.totalBloques} bloques están correctamente enlazados.` 
-                : `Se rompió el enlace en el bloque ID: ${verificacion.bloqueAlterado}. La cadena ha sido comprometida.`}
-            </p>
-          </div>
-        </div>
+      {verificado && (
+        <ChartCard title="Resumen de auditoría" subtitle={`Lote ${loteId}`}>
+          <AuditSummary verificado={verificado} />
+        </ChartCard>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold border-b border-slate-200">
-              <tr>
-                <th className="px-4 py-3">Ubicación</th>
-                <th className="px-4 py-3">Temp.</th>
-                <th className="px-4 py-3">Hash Criptográfico Actual</th>
-                <th className="px-4 py-3">Referencia Bloque Anterior</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {historial.map((reg, index) => (
-                <tr key={index} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3">{reg.ubicacion}</td>
-                  <td className="px-4 py-3 font-bold text-slate-700">{reg.temperatura}°C</td>
-                  <td className="px-4 py-3 font-mono text-[10px] text-blue-600 break-all">{reg.hash_integridad}</td>
-                  <td className="px-4 py-3 font-mono text-[10px] text-slate-400 break-all">
-                    {/* FIX: Mostrar un texto amigable si es el primer bloque de la cadena */}
-                    {reg.hash_previo === '0000000000000000000000000000000000000000000000000000000000000000' 
-                      ? <span className="text-emerald-600 font-bold">BLOQUE GÉNESIS (000...000)</span> 
-                      : reg.hash_previo}
-                  </td>
-                </tr>
-              ))}
-              {historial.length === 0 && (
-                <tr><td colSpan="4" className="px-4 py-8 text-center text-slate-400">No hay registros para este lote.</td></tr>
-              )}
-            </tbody>
-          </table>
+      <ChartCard title={`Visualización de la cadena — ${bloques.length} bloques`} subtitle="Timeline vertical con hash_previo encadenado a cada bloque">
+        <div className="max-h-[560px] overflow-y-auto pr-2">
+          <BlockchainTimeline bloques={bloques} />
         </div>
-      </div>
+      </ChartCard>
+
+      {bloques.length > 0 && (
+        <ChartCard title="Vista transversal por lote" subtitle="Integración de ambos eslabones por bloque">
+          <DataTable columns={columnasTransversal} rows={bloques} pageSize={8} />
+        </ChartCard>
+      )}
     </div>
   );
-};
-
-export default Auditoria;
+}
